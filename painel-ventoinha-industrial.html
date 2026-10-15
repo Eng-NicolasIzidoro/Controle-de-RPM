@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controlo de ventoinha DC</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --fundo: #d8dde2;
+      --painel: #f6f7f8;
+      --cabeca: #c9d0d6;
+      --grafite: #262c33;
+      --tinta: #1d242b;
+      --mudo: #56616c;
+      --regua: #9ea8b1;
+      --grade: #dde2e7;
+      --plot: #ffffff;
+      --seg: #e8b100;       /* faixa de segurança do cabeçalho */
+      --pv: #0a58ad;        /* velocidade (variável de processo) */
+      --sp: #d4560a;        /* alvo */
+      --op: #0e7c66;        /* potência aplicada */
+      --er: #6b4fa0;        /* erro */
+      --ok: #1a7f37;
+      --aviso: #a86a00;
+      --alarme: #c62828;
+      --fonte: 'Barlow Semi Condensed', 'Arial Narrow', 'Segoe UI', sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--fundo); color: var(--tinta); font-family: var(--fonte); font-size: 16px; line-height: 1.4; }
+    button, input { font: inherit; color: inherit; }
+    :is(button, input, summary):focus-visible { outline: 2px solid var(--pv); outline-offset: 2px; }
+
+    /* ---------- Barra de título ---------- */
+    .barra {
+      background: var(--grafite); color: #eef1f4; border-bottom: 4px solid var(--seg);
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 24px;
+      padding: 12px 24px;
+    }
+    .barra h1 { margin: 0; font-size: 1.45rem; font-weight: 600; letter-spacing: .01em; }
+    .barra .sub { margin: 0; font-size: .9rem; color: #aab4be; }
+    .barra-dir { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+    .estado { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+    .lampada { width: 12px; height: 12px; border-radius: 50%; background: #6b7580; border: 1px solid #00000040; }
+    .estado.ligado .lampada { background: #3ddc6a; }
+    .relogio { font-family: var(--mono); font-size: .95rem; color: #aab4be; }
+
+    /* ---------- Botões ---------- */
+    .btn {
+      appearance: none; cursor: pointer; padding: 8px 16px; border-radius: 3px;
+      border: 1px solid var(--regua); background: #fff; color: var(--tinta); font-weight: 500;
+    }
+    .btn:hover:not(:disabled) { background: #eef1f4; border-color: var(--mudo); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-pv { background: var(--pv); border-color: var(--pv); color: #fff; }
+    .btn-pv:hover:not(:disabled) { background: var(--pv); filter: brightness(1.12); border-color: var(--pv); }
+    .btn-sp { background: var(--sp); border-color: var(--sp); color: #fff; }
+    .btn-sp:hover:not(:disabled) { background: var(--sp); filter: brightness(1.1); border-color: var(--sp); }
+    .btn-parar { background: var(--alarme); border-color: var(--alarme); color: #fff; font-weight: 600; width: 100%; padding: 12px; font-size: 1.05rem; }
+    .btn-parar:hover:not(:disabled) { background: var(--alarme); filter: brightness(1.1); border-color: var(--alarme); }
+    .btn-peq { padding: 5px 10px; font-size: .9rem; }
+    .barra .btn { background: transparent; color: #eef1f4; border-color: #6b7580; }
+    .barra .btn:hover:not(:disabled) { background: #343c45; border-color: #aab4be; }
+    .barra .btn.btn-pv { background: var(--pv); border-color: var(--pv); }
+
+    .aviso-bloco { display: none; margin: 14px 24px 0; padding: 10px 14px; border-radius: 3px; background: #fbe4e2; color: var(--alarme); border: 1px solid var(--alarme); font-weight: 500; }
+    .aviso-bloco.visivel { display: block; }
+
+    /* ---------- Estrutura ---------- */
+    .pagina { max-width: 1280px; margin: 0 auto; padding: 16px 24px 40px; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; }
+    .coluna { display: grid; gap: 16px; min-width: 0; }
+    @media (max-width: 960px) { .pagina { grid-template-columns: minmax(0, 1fr); padding: 12px; } .barra { padding: 12px; } .aviso-bloco { margin: 12px 12px 0; } }
+
+    .painel { background: var(--painel); border: 1px solid var(--regua); border-radius: 3px; }
+    .painel > header, .painel > summary {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 8px 14px; background: var(--cabeca); border-bottom: 1px solid var(--regua); font-weight: 600;
+    }
+    .painel > header h2 { margin: 0; font-size: 1rem; font-weight: 600; }
+    .corpo { padding: 14px; }
+    .nota { margin: 0 0 10px; color: var(--mudo); font-size: .9rem; }
+
+    /* ---------- Instrumentos ---------- */
+    .instrumentos { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); overflow: hidden; }
+    .inst { padding: 12px 16px; border-left: 1px solid var(--regua); min-width: 0; }
+    .inst:first-child { border-left: none; }
+    .inst .nome { color: var(--mudo); font-size: .9rem; font-weight: 500; }
+    .inst .valor { font-family: var(--mono); font-weight: 500; font-size: 2.1rem; line-height: 1.15; margin-top: 2px; white-space: nowrap; }
+    .inst .valor small { font-family: var(--fonte); font-size: .85rem; color: var(--mudo); font-weight: 500; margin-left: 4px; }
+    .inst.pv .valor { font-size: 3rem; color: var(--pv); }
+    .inst.sp .valor { color: var(--sp); }
+    .inst.op .valor { color: var(--op); }
+    .inst .sub { font-size: .85rem; color: var(--mudo); min-height: 1.2em; margin-top: 2px; font-family: var(--mono); }
+    .barra-op { height: 6px; background: #dbe1e6; border-radius: 1px; margin-top: 6px; overflow: hidden; }
+    .barra-op > i { display: block; height: 100%; width: 0; background: var(--op); transition: width .25s; }
+    .selo { display: inline-block; padding: 1px 8px; border-radius: 2px; font-size: .85rem; font-weight: 600; font-family: var(--fonte); color: #fff; background: var(--mudo); margin-top: 4px; }
+    .selo.ok { background: var(--ok); }
+    .selo.aviso { background: var(--aviso); }
+    .selo.alarme { background: var(--alarme); }
+    @media (max-width: 1100px) {
+      .instrumentos { grid-template-columns: 1fr 1fr; }
+      .inst.pv { grid-column: 1 / -1; border-bottom: 1px solid var(--regua); }
+      .inst { border-top: none; }
+      .inst:nth-child(3), .inst:nth-child(5) { border-left: none; }
+      .inst:nth-child(n+4) { border-top: 1px solid var(--regua); }
+    }
+
+    /* ---------- Tendências ---------- */
+    .segmentado { display: inline-grid; grid-auto-flow: column; gap: 2px; padding: 2px; background: #fff; border: 1px solid var(--regua); border-radius: 3px; }
+    .segmentado button { appearance: none; border: none; background: transparent; padding: 4px 12px; border-radius: 2px; cursor: pointer; font-weight: 500; font-size: .9rem; color: var(--mudo); }
+    .segmentado button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--tinta); background: #eef1f4; }
+    .segmentado button[aria-pressed="true"] { background: var(--grafite); color: #fff; }
+    .segmentado button:disabled { opacity: .45; cursor: not-allowed; }
+    .segmentado.largo { display: grid; grid-template-columns: 1fr 1fr; }
+    .segmentado.largo button { padding: 9px 8px; font-size: 1rem; }
+
+    .cursor-info { min-height: 1.5em; padding: 6px 14px; border-bottom: 1px solid var(--regua); font-size: .92rem; color: var(--mudo); display: flex; gap: 6px 18px; flex-wrap: wrap; }
+    .cursor-info b { color: var(--tinta); font-family: var(--mono); font-weight: 500; }
+    .cursor-info .c-pv b { color: var(--pv); } .cursor-info .c-sp b { color: var(--sp); }
+    .cursor-info .c-op b { color: var(--op); } .cursor-info .c-er b { color: var(--er); }
+
+    .lane { padding: 10px 14px 0; }
+    .lane + .lane { border-top: 1px solid var(--grade); }
+    .lane:last-child { padding-bottom: 8px; }
+    .lane-tit { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; font-weight: 600; font-size: .95rem; }
+    .legenda { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 400; font-size: .85rem; color: var(--mudo); }
+    .legenda span { display: inline-flex; align-items: center; gap: 6px; }
+    .legenda i { display: inline-block; width: 20px; height: 0; border-top: 3px solid; }
+    .legenda i.tracejado { border-top-style: dashed; border-top-width: 2px; }
+    .legenda i.faixa { height: 10px; width: 14px; border: none; background: #d4560a33; }
+    canvas { display: block; width: 100%; touch-action: pan-y; cursor: crosshair; }
+    #cvRPM { height: 250px; } #cvPot { height: 130px; } #cvErro { height: 170px; }
+
+    /* ---------- Controlos laterais ---------- */
+    .lateral { display: grid; gap: 16px; }
+    .pot-leitura { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 2px; }
+    .pot-leitura .valor { font-family: var(--mono); font-size: 2.2rem; font-weight: 500; color: var(--op); }
+    .pot-leitura .valor small { font-family: var(--fonte); font-size: .9rem; color: var(--mudo); margin-left: 3px; }
+    input[type=range] { width: 100%; height: 30px; margin: 4px 0; accent-color: var(--op); }
+    input[type=range]:disabled { opacity: .45; }
+    .predefinidos { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 6px 0 12px; }
+    .campo-linha { display: flex; gap: 8px; }
+    .campo-linha + .campo-linha { margin-top: 10px; }
+    input[type=number] { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--regua); border-radius: 3px; background: #fff; font-family: var(--mono); }
+    input[type=number]:disabled { opacity: .45; background: #eef1f4; }
+    label.rotulo { align-self: center; font-size: .92rem; color: var(--mudo); white-space: nowrap; }
+
+    .linha-dados { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--grade); font-size: .95rem; }
+    .linha-dados:last-child { border-bottom: none; }
+    .linha-dados .v { font-family: var(--mono); font-weight: 500; }
+    .led { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #b9c1c9; border: 1px solid #00000030; margin-right: 6px; vertical-align: middle; }
+    .led.on { background: var(--ok); }
+
+    details.painel > summary { cursor: pointer; list-style: none; }
+    details.painel > summary::-webkit-details-marker { display: none; }
+    details.painel > summary::after { content: "+"; font-family: var(--mono); font-weight: 600; }
+    details.painel[open] > summary::after { content: "−"; }
+    dl.fw { margin: 0; font-size: .92rem; }
+    dl.fw div { padding: 7px 0; border-bottom: 1px solid var(--grade); }
+    dl.fw div:last-child { border-bottom: none; }
+    dl.fw dt { color: var(--mudo); font-size: .85rem; }
+    dl.fw dd { margin: 0; font-family: var(--mono); font-size: .85rem; }
+
+    /* ---------- Registo ---------- */
+    .reg-cab, .reg { display: grid; grid-template-columns: 84px 1fr 1fr 1fr 1fr 1.2fr; gap: 8px; padding: 5px 14px; font-size: .92rem; }
+    .reg-cab { background: #e7ebef; border-bottom: 1px solid var(--regua); color: var(--mudo); font-weight: 600; }
+    .reg { font-family: var(--mono); font-size: .85rem; border-bottom: 1px solid var(--grade); }
+    .reg .h { color: var(--mudo); }
+    .reg.tx { background: #fff6e3; }
+    .reg.tx .t { grid-column: 2 / -1; color: var(--aviso); font-weight: 500; }
+    .reg-lista { max-height: 230px; overflow-y: auto; background: #fff; }
+    .reg-vazio { padding: 14px; color: var(--mudo); }
+    @media (max-width: 640px) {
+      .reg-cab, .reg { grid-template-columns: 70px 1fr 1fr 1fr; }
+      .reg-cab span:nth-child(n+5), .reg:not(.tx) span:nth-child(n+5) { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+  </style>
+</head>
+<body>
+
+  <div class="barra">
+    <div>
+      <h1>Controlo de ventoinha DC</h1>
+      <p class="sub">Painel de operação do ESP32</p>
+    </div>
+    <div class="barra-dir">
+      <span class="relogio" id="relogio">--:--:--</span>
+      <span class="estado" id="estado" role="status"><span class="lampada"></span><span id="estadoTexto">Desligado</span></span>
+      <button class="btn btn-pv" id="btnLigar" type="button">Ligar USB</button>
+    </div>
+  </div>
+
+  <div class="aviso-bloco" id="aviso" role="alert"></div>
+
+  <div class="pagina">
+    <!-- ================= Coluna principal ================= -->
+    <div class="coluna">
+
+      <!-- Instrumentos -->
+      <section class="painel instrumentos" aria-label="Leituras atuais">
+        <div class="inst pv">
+          <div class="nome">Velocidade atual</div>
+          <div class="valor"><span id="vPV">—</span><small>RPM</small></div>
+          <div class="sub" id="vResolucao"></div>
+        </div>
+        <div class="inst sp">
+          <div class="nome">Alvo</div>
+          <div class="valor"><span id="vSP">—</span><small>RPM</small></div>
+          <div class="sub" id="vTol"></div>
+        </div>
+        <div class="inst">
+          <div class="nome">Erro (alvo − velocidade)</div>
+          <div class="valor"><span id="vErro">—</span><small>RPM</small></div>
+          <div class="sub" id="vErroPct">&nbsp;</div>
+          <span class="selo" id="selo">Sem dados</span>
+        </div>
+        <div class="inst op">
+          <div class="nome">Potência aplicada</div>
+          <div class="valor"><span id="vOP">—</span><small>%</small></div>
+          <div class="barra-op"><i id="barraOP"></i></div>
+        </div>
+        <div class="inst">
+          <div class="nome">Máxima registada</div>
+          <div class="valor"><span id="vMax">—</span><small>RPM</small></div>
+          <div class="sub" id="vModoTxt">&nbsp;</div>
+        </div>
+      </section>
+
+      <!-- Tendências -->
+      <section class="painel" aria-label="Gráficos de tendência">
+        <header>
+          <h2>Tendências</h2>
+          <div class="segmentado" role="group" aria-label="Janela de tempo">
+            <button type="button" data-janela="30" aria-pressed="false">30 s</button>
+            <button type="button" data-janela="60" aria-pressed="true">1 min</button>
+            <button type="button" data-janela="300" aria-pressed="false">5 min</button>
+          </div>
+        </header>
+        <div class="cursor-info" id="cursorInfo">Passe o rato sobre um gráfico para ler os valores.</div>
+
+        <div class="lane">
+          <div class="lane-tit">
+            <span>Velocidade e alvo</span>
+            <span class="legenda">
+              <span><i style="border-color: var(--pv)"></i>Velocidade</span>
+              <span><i class="tracejado" style="border-color: var(--sp)"></i>Alvo</span>
+              <span><i class="faixa"></i>Tolerância</span>
+            </span>
+          </div>
+          <canvas id="cvRPM"></canvas>
+        </div>
+
+        <div class="lane">
+          <div class="lane-tit">
+            <span>Potência aplicada</span>
+            <span class="legenda"><span><i style="border-color: var(--op)"></i>Potência (%)</span></span>
+          </div>
+          <canvas id="cvPot"></canvas>
+        </div>
+
+        <div class="lane">
+          <div class="lane-tit">
+            <span>Erro de velocidade</span>
+            <span class="legenda">
+              <span><i style="border-color: var(--er)"></i>Alvo − velocidade (RPM)</span>
+              <span>Acima de zero: falta velocidade</span>
+            </span>
+          </div>
+          <canvas id="cvErro"></canvas>
+        </div>
+      </section>
+
+      <!-- Registo -->
+      <section class="painel" aria-label="Registo de dados">
+        <header>
+          <h2>Registo</h2>
+          <span style="display:flex; gap:8px;">
+            <button class="btn btn-peq" id="btnCSV" type="button">Exportar CSV</button>
+            <button class="btn btn-peq" id="btnLimparHist" type="button">Limpar gráficos</button>
+          </span>
+        </header>
+        <div class="reg-cab"><span>Hora</span><span>Velocidade</span><span>Alvo</span><span>Erro</span><span>Potência</span><span>Modo</span></div>
+        <div class="reg-lista" id="regLista"><div class="reg-vazio" id="regVazio">Sem dados. Ligue a USB para começar.</div></div>
+      </section>
+    </div>
+
+    <!-- ================= Coluna lateral ================= -->
+    <aside class="lateral" aria-label="Controlos">
+
+      <section class="painel">
+        <header><h2>Modo de comando</h2></header>
+        <div class="corpo">
+          <div class="segmentado largo" role="group" aria-label="Modo de comando">
+            <button type="button" id="btnPot" data-modo="0" aria-pressed="false" disabled>Potenciómetro</button>
+            <button type="button" id="btnWeb" data-modo="1" aria-pressed="false" disabled>Interface</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="painel">
+        <header><h2>Potência</h2></header>
+        <div class="corpo">
+          <div class="pot-leitura">
+            <span class="nota" style="margin:0">Enviada ao motor</span>
+            <span class="valor"><span id="potView">0</span><small>%</small></span>
+          </div>
+          <input type="range" min="0" max="100" value="0" id="sliderPot" aria-label="Potência em percentagem" disabled>
+          <div class="predefinidos" role="group" aria-label="Valores rápidos">
+            <button class="btn btn-peq" type="button" data-pot="0" disabled>0</button>
+            <button class="btn btn-peq" type="button" data-pot="25" disabled>25</button>
+            <button class="btn btn-peq" type="button" data-pot="50" disabled>50</button>
+            <button class="btn btn-peq" type="button" data-pot="75" disabled>75</button>
+            <button class="btn btn-peq" type="button" data-pot="100" disabled>100</button>
+          </div>
+          <p class="nota" id="notaPot" style="margin: 0 0 12px;">Ligue a USB para controlar a ventoinha.</p>
+          <button class="btn btn-parar" id="btnParar" type="button" disabled>Parar motor</button>
+          <p class="nota" style="margin: 8px 0 0;">Muda para o modo Interface e põe a potência a 0.</p>
+        </div>
+      </section>
+
+      <section class="painel">
+        <header><h2>Alvo de velocidade</h2></header>
+        <div class="corpo">
+          <p class="nota">Define a referência mostrada nos gráficos. O ESP32 não regula a velocidade sozinho: a potência continua a ser a que escolher acima.</p>
+          <div class="campo-linha">
+            <input type="number" id="inputSetpoint" min="0" step="50" placeholder="RPM, ex.: 3000" aria-label="RPM alvo" disabled>
+            <button class="btn btn-sp" id="btnSetpoint" type="button" disabled>Definir</button>
+            <button class="btn" id="btnLimparSP" type="button" disabled>Limpar</button>
+          </div>
+          <div class="campo-linha">
+            <label class="rotulo" for="inputTol">Tolerância</label>
+            <input type="number" id="inputTol" min="1" max="50" step="1" value="5" aria-label="Tolerância em percentagem">
+            <span class="rotulo">% do alvo</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="painel">
+        <header><h2>Saída para o motor</h2></header>
+        <div class="corpo">
+          <div class="linha-dados"><span>ENA (PWM)</span><span class="v"><span id="vPWM">0</span> / 255</span></div>
+          <div class="linha-dados"><span>Ciclo útil</span><span class="v"><span id="vDuty">0</span> %</span></div>
+          <div class="linha-dados"><span>IN1</span><span class="v"><i class="led" id="ledIN1"></i><span id="txtIN1">baixo</span></span></div>
+          <div class="linha-dados"><span>IN2</span><span class="v"><i class="led" id="ledIN2"></i><span id="txtIN2">baixo</span></span></div>
+        </div>
+      </section>
+
+      <details class="painel">
+        <summary>Configuração do firmware</summary>
+        <div class="corpo">
+          <dl class="fw" id="fwInfo"></dl>
+        </div>
+      </details>
+    </aside>
+  </div>
+
+  <script>
+    // ================= Parâmetros do firmware =================
+    // Devem coincidir com as constantes do código do ESP32.
+    const FW = {
+      furosPorVolta: 1,
+      debounceMs: 5,
+      intervaloMs: 1000,
+      pwmBits: 8,
+      pwmFreq: 5000,
+      pwmMin: 15,
+      pwmMax: 255,
+      pinos: { pot: 34, sensor: 18, ena: 19, in1: 21, in2: 22 }
+    };
+    const RPM_MAX_LEITURA = Math.floor(60000 / FW.debounceMs / FW.furosPorVolta);
+    const RESOLUCAO_RPM = 60 / FW.furosPorVolta;
+
+    // ================= Estado =================
+    const S = { rpm: 0, maxRpm: 0, pot: 0, modo: null, sp: 0, tol: 5, temDados: false };
+    const amostras = [];
+    const MAX_AMOSTRAS = 7200;
+    const GAP_MS = 3500;       // intervalo acima do qual o traço é interrompido
+    let janelaS = 60;
+    let cursorT = null;
+
+    const $ = (id) => document.getElementById(id);
+    const nf = new Intl.NumberFormat('pt-PT');
+    const fInt = (v) => nf.format(Math.round(v));
+    const sinal = (v) => (v > 0 ? '+' : v < 0 ? '−' : '') + nf.format(Math.abs(Math.round(v)));
+    const cssv = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    const nomeModo = (m) => (m === 1 ? 'Interface' : m === 0 ? 'Potenciómetro' : '—');
+
+    // Mesma conta do firmware: map(p, 2, 100, 15, 255) e parado até 1 %
+    function pwmDe(p) {
+      return p <= 1 ? 0 : Math.trunc((p - 2) * (FW.pwmMax - FW.pwmMin) / 98) + FW.pwmMin;
+    }
+
+    function estadoAlvo() {
+      if (!S.temDados) return { txt: 'Sem dados', cls: '' };
+      if (S.sp <= 0) return { txt: 'Sem alvo', cls: '' };
+      const e = S.sp - S.rpm;
+      if (Math.abs(e) <= S.sp * S.tol / 100) return { txt: 'No alvo', cls: 'ok' };
+      return e > 0 ? { txt: 'Abaixo do alvo', cls: 'aviso' } : { txt: 'Acima do alvo', cls: 'alarme' };
+    }
+
+    // ================= Interface =================
+    function mostrarAviso(t) { const a = $('aviso'); a.textContent = t; a.classList.add('visivel'); }
+    function limparAviso() { $('aviso').classList.remove('visivel'); }
+
+    function atualizarPainel() {
+      const ligado = !!writer;
+      const remoto = S.modo === 1;
+
+      // Barra de título
+      $('estado').classList.toggle('ligado', ligado);
+      $('estadoTexto').textContent = ligado ? 'Ligado a 115200 baud' : 'Desligado';
+      $('btnLigar').textContent = ligado ? 'Desligar' : 'Ligar USB';
+      $('btnLigar').classList.toggle('btn-pv', !ligado);
+
+      // Instrumentos
+      const d = S.temDados;
+      $('vPV').textContent = d ? fInt(S.rpm) : '—';
+      $('vResolucao').textContent = 'Resolução ' + RESOLUCAO_RPM + ' RPM';
+      $('vSP').textContent = S.sp > 0 ? fInt(S.sp) : '—';
+      $('vTol').textContent = S.sp > 0 ? 'Tolerância ±' + fInt(S.sp * S.tol / 100) + ' RPM' : '';
+      $('vOP').textContent = d ? S.pot : '—';
+      $('barraOP').style.width = (d ? S.pot : 0) + '%';
+      $('vMax').textContent = d ? fInt(S.maxRpm) : '—';
+      $('vModoTxt').textContent = d ? 'Modo: ' + nomeModo(S.modo) : '\u00a0';
+
+      const st = estadoAlvo();
+      $('selo').textContent = st.txt;
+      $('selo').className = 'selo ' + st.cls;
+      if (d && S.sp > 0) {
+        const e = S.sp - S.rpm;
+        $('vErro').textContent = sinal(e);
+        const pct = e / S.sp * 100;
+        $('vErroPct').textContent = (pct > 0 ? '+' : pct < 0 ? '−' : '') +
+          Math.abs(pct).toLocaleString('pt-PT', { maximumFractionDigits: 1 }) + ' % do alvo';
+      } else {
+        $('vErro').textContent = '—';
+        $('vErroPct').textContent = '\u00a0';
+      }
+
+      // Controlos
+      $('btnPot').disabled = !ligado;
+      $('btnWeb').disabled = !ligado;
+      $('btnPot').setAttribute('aria-pressed', String(S.modo === 0));
+      $('btnWeb').setAttribute('aria-pressed', String(remoto));
+      $('sliderPot').disabled = !(ligado && remoto);
+      document.querySelectorAll('[data-pot]').forEach((b) => (b.disabled = !(ligado && remoto)));
+      $('btnParar').disabled = !ligado;
+      $('inputSetpoint').disabled = !ligado;
+      $('btnSetpoint').disabled = !ligado;
+      $('btnLimparSP').disabled = !ligado;
+      $('notaPot').textContent = !ligado
+        ? 'Ligue a USB para controlar a ventoinha.'
+        : remoto
+          ? 'Use o seletor ou os valores rápidos para ajustar a potência.'
+          : 'A potência segue o potenciómetro físico. Mude para Interface para controlar daqui.';
+
+      // Saída para o motor (mesma lógica do firmware)
+      const pwm = pwmDe(S.pot);
+      const parado = S.pot <= 1;
+      $('vPWM').textContent = pwm;
+      $('vDuty').textContent = Math.round(pwm / (Math.pow(2, FW.pwmBits) - 1) * 100);
+      $('ledIN1').classList.toggle('on', !parado);
+      $('txtIN1').textContent = parado ? 'baixo' : 'alto';
+      $('ledIN2').classList.remove('on');
+      $('txtIN2').textContent = 'baixo';
+
+      document.querySelectorAll('[data-janela]').forEach((b) =>
+        b.setAttribute('aria-pressed', String(Number(b.dataset.janela) === janelaS)));
+    }
+
+    // ================= Registo =================
+    function juntarRegisto(html, cls) {
+      const v = $('regVazio'); if (v) v.remove();
+      const lista = $('regLista');
+      const d = document.createElement('div');
+      d.className = 'reg ' + cls;
+      d.innerHTML = html;
+      lista.prepend(d);
+      while (lista.children.length > 60) lista.lastChild.remove();
+    }
+    const horaAgora = () => new Date().toLocaleTimeString('pt-PT');
+    function registoRX(a) {
+      const erro = a.sp > 0 ? sinal(a.sp - a.rpm) : '—';
+      juntarRegisto(
+        `<span class="h">${horaAgora()}</span><span>${fInt(a.rpm)} RPM</span><span>${a.sp > 0 ? fInt(a.sp) : '—'}</span>` +
+        `<span>${erro}</span><span>${a.pot} %</span><span>${a.modo === 1 ? 'Interface' : 'Potenc.'}</span>`, 'rx');
+    }
+    function registoTX(cmd) {
+      juntarRegisto(`<span class="h">${horaAgora()}</span><span class="t">Enviado: ${cmd}</span>`, 'tx');
+    }
+
+    // ================= Gráficos =================
+    const M = { t: 10, r: 16, b: 10, l: 60 };
+
+    function prep(cv) {
+      const dpr = window.devicePixelRatio || 1;
+      const w = cv.clientWidth, h = cv.clientHeight;
+      const W = Math.round(w * dpr), H = Math.round(h * dpr);
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      const c = cv.getContext('2d');
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.clearRect(0, 0, w, h);
+      return { c, w, h };
+    }
+
+    function janela() {
+      const fim = amostras.length ? amostras[amostras.length - 1].t : Date.now();
+      return { ini: fim - janelaS * 1000, fim };
+    }
+    function visiveis(j) {
+      let i = amostras.length;
+      while (i > 0 && amostras[i - 1].t >= j.ini - GAP_MS) i--;
+      return amostras.slice(i);
+    }
+    function corridas(vis, val) {
+      const runs = []; let r = []; let prev = null;
+      for (const a of vis) {
+        const v = val(a);
+        if (v == null || (prev != null && a.t - prev > GAP_MS)) { if (r.length) runs.push(r); r = []; }
+        if (v != null) { r.push(a); prev = a.t; } else prev = null;
+      }
+      if (r.length) runs.push(r);
+      return runs;
+    }
+
+    const fmtT = (s) => janelaS <= 60 ? Math.round(s) + ' s'
+      : Math.floor(s / 60) + ':' + String(Math.round(s % 60)).padStart(2, '0');
+
+    function escalaRPM(bruto) {
+      bruto = Math.max(bruto, 1000);
+      for (const s of [200, 250, 500, 1000, 2000, 2500, 5000]) {
+        const n = Math.ceil(bruto / s);
+        if (n <= 6) return { max: n * s, ticks: n };
+      }
+      return { max: Math.ceil(bruto / 5000) * 5000, ticks: 4 };
+    }
+    function limiteErro(v) {
+      for (const l of [100, 200, 300, 500, 1000, 2000, 3000, 5000, 10000, 20000]) if (l >= v) return l;
+      return 20000;
+    }
+
+    function lane(cv, cfg) {
+      const { c, w, h } = prep(cv);
+      const baixo = cfg.eixoX ? 24 : 0;
+      const A = { x: M.l, y: M.t, w: w - M.l - M.r, h: h - M.t - M.b - baixo };
+      const j = janela(), dur = janelaS * 1000;
+      const X = (t) => A.x + ((t - j.ini) / dur) * A.w;
+      const Y = (v) => A.y + A.h - ((v - cfg.yMin) / (cfg.yMax - cfg.yMin)) * A.h;
+      const mudo = cssv('--mudo'), grade = cssv('--grade');
+
+      c.fillStyle = cssv('--plot'); c.fillRect(A.x, A.y, A.w, A.h);
+      c.font = '12px ' + cssv('--fonte'); c.lineWidth = 1;
+
+      c.textAlign = 'right'; c.textBaseline = 'middle';
+      for (let i = 0; i <= cfg.ticks; i++) {
+        const v = cfg.yMin + (cfg.yMax - cfg.yMin) * i / cfg.ticks;
+        const y = Math.round(Y(v)) + 0.5;
+        c.strokeStyle = grade; c.beginPath(); c.moveTo(A.x, y); c.lineTo(A.x + A.w, y); c.stroke();
+        c.fillStyle = mudo; c.fillText(cfg.fmt(v), A.x - 8, y);
+      }
+      const div = janelaS === 300 ? 5 : 6;
+      c.textBaseline = 'alphabetic';
+      for (let k = 0; k <= div; k++) {
+        const x = Math.round(A.x + A.w * k / div) + 0.5;
+        c.strokeStyle = grade; c.beginPath(); c.moveTo(x, A.y); c.lineTo(x, A.y + A.h); c.stroke();
+        if (cfg.eixoX) {
+          c.fillStyle = mudo;
+          c.textAlign = k === 0 ? 'left' : k === div ? 'right' : 'center';
+          c.fillText(k === div ? 'agora' : '−' + fmtT(janelaS * (1 - k / div)), x, A.y + A.h + 17);
+        }
+      }
+
+      c.save(); c.beginPath(); c.rect(A.x, A.y, A.w, A.h); c.clip();
+      cfg.draw(c, X, Y, A, visiveis(j));
+      c.restore();
+
+      c.strokeStyle = cssv('--regua'); c.strokeRect(A.x + 0.5, A.y + 0.5, A.w - 1, A.h - 1);
+
+      if (cursorT != null && cursorT >= j.ini && cursorT <= j.fim) {
+        const x = Math.round(X(cursorT)) + 0.5;
+        c.strokeStyle = cssv('--tinta'); c.lineWidth = 1; c.setLineDash([4, 3]);
+        c.beginPath(); c.moveTo(x, A.y); c.lineTo(x, A.y + A.h); c.stroke(); c.setLineDash([]);
+      }
+    }
+
+    function bandaTol(c, X, Y, vis, centro) {
+      c.fillStyle = cssv('--sp') + '26';
+      for (const run of corridas(vis, (a) => (a.sp > 0 ? a.sp : null))) {
+        let i = 0;
+        while (i < run.length) {
+          let k = i;
+          while (k + 1 < run.length && run[k + 1].sp === run[i].sp) k++;
+          const sp = run[i].sp, d = sp * S.tol / 100, m = centro(sp);
+          const x0 = X(run[i].t), x1 = X(run[Math.min(k + 1, run.length - 1)].t);
+          c.fillRect(x0, Y(m + d), Math.max(x1 - x0, 1), Y(m - d) - Y(m + d));
+          i = k + 1;
+        }
+      }
+    }
+
+    function tracoRuns(c, runs, X, Y, val) {
+      for (const run of runs) {
+        c.beginPath();
+        run.forEach((a, i) => (i === 0 ? c.moveTo(X(a.t), Y(val(a))) : c.lineTo(X(a.t), Y(val(a)))));
+        c.stroke();
+      }
+    }
+
+    function desenharRPM(c, X, Y, A, vis) {
+      bandaTol(c, X, Y, vis, (sp) => sp);
+
+      c.strokeStyle = cssv('--sp'); c.lineWidth = 2; c.setLineDash([8, 5]);
+      for (const run of corridas(vis, (a) => (a.sp > 0 ? a.sp : null))) {
+        c.beginPath();
+        run.forEach((a, i) => {
+          const x = X(a.t);
+          if (i === 0) c.moveTo(x, Y(a.sp));
+          else { c.lineTo(x, Y(run[i - 1].sp)); c.lineTo(x, Y(a.sp)); }
+        });
+        c.stroke();
+      }
+      c.setLineDash([]);
+
+      c.strokeStyle = cssv('--pv'); c.lineWidth = 2.5; c.lineJoin = 'round';
+      tracoRuns(c, corridas(vis, (a) => a.rpm), X, Y, (a) => a.rpm);
+
+      if (vis.length) {
+        const u = vis[vis.length - 1];
+        c.beginPath(); c.arc(X(u.t), Y(u.rpm), 4.5, 0, Math.PI * 2);
+        c.fillStyle = cssv('--pv'); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+      }
+    }
+
+    function desenharPot(c, X, Y, A, vis) {
+      for (const run of corridas(vis, (a) => a.pot)) {
+        c.beginPath();
+        c.moveTo(X(run[0].t), Y(0));
+        run.forEach((a) => c.lineTo(X(a.t), Y(a.pot)));
+        c.lineTo(X(run[run.length - 1].t), Y(0)); c.closePath();
+        c.fillStyle = cssv('--op') + '2e'; c.fill();
+      }
+      c.strokeStyle = cssv('--op'); c.lineWidth = 2.2; c.lineJoin = 'round';
+      tracoRuns(c, corridas(vis, (a) => a.pot), X, Y, (a) => a.pot);
+      if (vis.length) {
+        const u = vis[vis.length - 1];
+        c.beginPath(); c.arc(X(u.t), Y(u.pot), 4, 0, Math.PI * 2);
+        c.fillStyle = cssv('--op'); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+      }
+    }
+
+    function desenharErro(c, X, Y, A, vis) {
+      bandaTol(c, X, Y, vis, () => 0);
+      c.strokeStyle = cssv('--tinta'); c.lineWidth = 1.5;
+      const y0 = Math.round(Y(0)) + 0.5;
+      c.beginPath(); c.moveTo(A.x, y0); c.lineTo(A.x + A.w, y0); c.stroke();
+
+      const erro = (a) => (a.sp > 0 ? a.sp - a.rpm : null);
+      c.strokeStyle = cssv('--er'); c.lineWidth = 2.2; c.lineJoin = 'round';
+      tracoRuns(c, corridas(vis, erro), X, Y, erro);
+      const ult = vis.length ? vis[vis.length - 1] : null;
+      if (ult && erro(ult) != null) {
+        c.beginPath(); c.arc(X(ult.t), Y(erro(ult)), 4, 0, Math.PI * 2);
+        c.fillStyle = cssv('--er'); c.fill(); c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+      }
+      if (!vis.some((a) => a.sp > 0)) {
+        c.fillStyle = cssv('--mudo'); c.font = '14px ' + cssv('--fonte'); c.textAlign = 'center';
+        c.fillText('Defina um alvo para ver o erro.', A.x + A.w / 2, A.y + A.h / 2 - 12);
+      }
+    }
+
+    function desenharTudo() {
+      const vis = visiveis(janela());
+      let pico = 0;
+      for (const a of vis) pico = Math.max(pico, a.rpm, a.sp);
+      const e1 = escalaRPM(pico * 1.05);
+      lane($('cvRPM'), { yMin: 0, yMax: e1.max, ticks: e1.ticks, fmt: (v) => fInt(v), eixoX: false, draw: desenharRPM });
+      lane($('cvPot'), { yMin: 0, yMax: 100, ticks: 4, fmt: (v) => v + ' %', eixoX: false, draw: desenharPot });
+      let em = 100;
+      for (const a of vis) if (a.sp > 0) em = Math.max(em, Math.abs(a.sp - a.rpm), a.sp * S.tol / 100);
+      const lim = limiteErro(em * 1.1);
+      lane($('cvErro'), { yMin: -lim, yMax: lim, ticks: 4, fmt: (v) => sinal(v), eixoX: true, draw: desenharErro });
+    }
+
+    // Leitura com o cursor
+    function amostraProxima(t) {
+      let lo = 0, hi = amostras.length - 1;
+      if (hi < 0) return null;
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (amostras[m].t < t) lo = m; else hi = m; }
+      return Math.abs(amostras[lo].t - t) <= Math.abs(amostras[hi].t - t) ? amostras[lo] : amostras[hi];
+    }
+    function atualizarCursor() {
+      const el = $('cursorInfo');
+      const a = cursorT != null ? amostraProxima(cursorT) : null;
+      if (!a) { el.textContent = 'Passe o rato sobre um gráfico para ler os valores.'; return; }
+      const rel = Math.round((a.t - janela().fim) / 1000);
+      el.innerHTML =
+        `<span><b>${rel === 0 ? 'agora' : '−' + Math.abs(rel) + ' s'}</b></span>` +
+        `<span class="c-pv">Velocidade <b>${fInt(a.rpm)} RPM</b></span>` +
+        `<span class="c-sp">Alvo <b>${a.sp > 0 ? fInt(a.sp) + ' RPM' : '—'}</b></span>` +
+        `<span class="c-er">Erro <b>${a.sp > 0 ? sinal(a.sp - a.rpm) + ' RPM' : '—'}</b></span>` +
+        `<span class="c-op">Potência <b>${a.pot} %</b></span>`;
+    }
+
+    ['cvRPM', 'cvPot', 'cvErro'].forEach((id) => {
+      const cv = $(id);
+      cv.addEventListener('pointermove', (e) => {
+        const r = cv.getBoundingClientRect();
+        const f = (e.clientX - r.left - M.l) / (r.width - M.l - M.r);
+        cursorT = f < 0 || f > 1 ? null : janela().ini + f * janelaS * 1000;
+        atualizarCursor(); desenharTudo();
+      });
+      cv.addEventListener('pointerleave', () => { cursorT = null; atualizarCursor(); desenharTudo(); });
+    });
+
+    let quadro = 0;
+    const redesenhar = () => { cancelAnimationFrame(quadro); quadro = requestAnimationFrame(desenharTudo); };
+    const ro = new ResizeObserver(redesenhar);
+    ['cvRPM', 'cvPot', 'cvErro'].forEach((id) => ro.observe($(id)));
+
+    // ================= Porta serial (Web Serial API) =================
+    let port = null, writer = null, reader = null, aLer = false;
+
+    async function conectarUSB() {
+      limparAviso();
+      if (!('serial' in navigator)) {
+        mostrarAviso('Este navegador não suporta Web Serial. Use o Chrome ou o Edge num computador.');
+        return;
+      }
+      try {
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+      } catch (e) {
+        port = null;
+        if (e.name !== 'NotFoundError') {
+          mostrarAviso('Não foi possível abrir a porta. Feche o Monitor Serial da Arduino IDE e tente novamente.');
+        }
+        return;
+      }
+      writer = port.writable.getWriter();
+      aLer = true;
+      atualizarPainel();
+      lerSerial();
+    }
+
+    async function lerSerial() {
+      const decoder = new TextDecoderStream();
+      const fechado = port.readable.pipeTo(decoder.writable).catch(() => {});
+      reader = decoder.readable.getReader();
+      let buffer = '';
+      try {
+        while (aLer) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += value;
+          const linhas = buffer.split('\n');
+          buffer = linhas.pop();
+          for (let linha of linhas) {
+            linha = linha.trim();
+            if (!linha.startsWith('{')) continue;
+            try { processarDados(JSON.parse(linha)); }
+            catch (e) { console.log('JSON inválido:', linha); }
+          }
+        }
+      } catch (e) {
+        if (aLer) mostrarAviso('A ligação USB foi interrompida.');
+      } finally {
+        try { reader.releaseLock(); } catch (e) {}
+        await fechado;
+        try { writer.releaseLock(); } catch (e) {}
+        try { await port.close(); } catch (e) {}
+        writer = null; reader = null; port = null; aLer = false;
+        S.modo = null;
+        atualizarPainel();
+      }
+    }
+
+    async function desconectarUSB() {
+      aLer = false;
+      if (reader) { try { await reader.cancel(); } catch (e) {} }
+    }
+
+    async function enviarComando(cmd) {
+      if (!writer) { mostrarAviso("Clique primeiro em 'Ligar USB'."); return false; }
+      try {
+        await writer.write(new TextEncoder().encode(cmd + '\n'));
+        registoTX(cmd);
+        return true;
+      } catch (e) {
+        mostrarAviso('Não foi possível enviar o comando.');
+        return false;
+      }
+    }
+
+    // ================= Dados recebidos =================
+    function processarDados(d) {
+      S.rpm = d.rpm; S.maxRpm = d.maxRpm; S.pot = d.pot; S.modo = d.modo; S.sp = d.setpoint; S.temDados = true;
+      const a = { t: Date.now(), rpm: d.rpm, maxRpm: d.maxRpm, pot: d.pot, modo: d.modo, sp: d.setpoint };
+      amostras.push(a);
+      if (amostras.length > MAX_AMOSTRAS) amostras.shift();
+
+      if (document.activeElement !== $('sliderPot')) {
+        $('sliderPot').value = d.pot;
+        $('potView').textContent = d.pot;
+      }
+      registoRX(a);
+      atualizarPainel();
+      desenharTudo();
+    }
+
+    // ================= Ações =================
+    $('btnLigar').addEventListener('click', () => (writer ? desconectarUSB() : conectarUSB()));
+
+    document.querySelectorAll('[data-modo]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        S.modo = Number(btn.dataset.modo);
+        atualizarPainel();
+        await enviarComando('M' + S.modo);
+      });
+    });
+
+    function enviarPotencia(v) {
+      $('sliderPot').value = v;
+      $('potView').textContent = v;
+      return enviarComando('P' + v);
+    }
+    $('sliderPot').addEventListener('input', (e) => { $('potView').textContent = e.target.value; });
+    $('sliderPot').addEventListener('change', (e) => enviarComando('P' + e.target.value));
+    document.querySelectorAll('[data-pot]').forEach((b) =>
+      b.addEventListener('click', () => enviarPotencia(Number(b.dataset.pot))));
+
+    $('btnParar').addEventListener('click', async () => {
+      S.modo = 1;
+      atualizarPainel();
+      if (await enviarComando('M1')) await enviarPotencia(0);
+    });
+
+    async function definirSetpoint(valor) {
+      const n = Math.max(0, parseInt(valor, 10) || 0);
+      S.sp = n;
+      atualizarPainel(); desenharTudo();
+      await enviarComando('S' + n);
+    }
+    $('btnSetpoint').addEventListener('click', () => definirSetpoint($('inputSetpoint').value));
+    $('btnLimparSP').addEventListener('click', () => { $('inputSetpoint').value = ''; definirSetpoint(0); });
+    $('inputSetpoint').addEventListener('keydown', (e) => { if (e.key === 'Enter') definirSetpoint(e.target.value); });
+    $('inputTol').addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      if (v > 0) { S.tol = Math.min(v, 50); atualizarPainel(); desenharTudo(); }
+    });
+
+    document.querySelectorAll('[data-janela]').forEach((b) =>
+      b.addEventListener('click', () => { janelaS = Number(b.dataset.janela); atualizarPainel(); desenharTudo(); }));
+
+    $('btnLimparHist').addEventListener('click', () => { amostras.length = 0; atualizarCursor(); desenharTudo(); });
+
+    $('btnCSV').addEventListener('click', () => {
+      if (!amostras.length) { mostrarAviso('Ainda não há dados para exportar.'); return; }
+      limparAviso();
+      const cab = 'hora;rpm;rpm_maximo;potencia_pct;modo;alvo_rpm;erro_rpm';
+      const linhas = amostras.map((a) => [
+        new Date(a.t).toISOString(), a.rpm, a.maxRpm, a.pot,
+        a.modo === 1 ? 'interface' : 'potenciometro', a.sp, a.sp > 0 ? a.sp - a.rpm : ''
+      ].join(';'));
+      const blob = new Blob(['\ufeff' + cab + '\n' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const el = document.createElement('a');
+      el.href = url;
+      el.download = 'ventoinha_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.csv';
+      document.body.appendChild(el); el.click(); el.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    // ================= Arranque =================
+    (function configuracaoFirmware() {
+      const itens = [
+        ['Sensor óptico', `GPIO ${FW.pinos.sensor}, ${FW.furosPorVolta} pulso por volta, filtro de ${FW.debounceMs} ms`],
+        ['Leitura de velocidade', `Atualiza a cada ${FW.intervaloMs / 1000} s, resolução de ${RESOLUCAO_RPM} RPM, até ${fInt(RPM_MAX_LEITURA)} RPM`],
+        ['Motor (ENA)', `GPIO ${FW.pinos.ena}, PWM de ${FW.pwmFreq / 1000} kHz, ${FW.pwmBits} bits`],
+        ['Direção (IN1 / IN2)', `GPIO ${FW.pinos.in1} / GPIO ${FW.pinos.in2}`],
+        ['PWM mínimo em marcha', `${FW.pwmMin} de ${FW.pwmMax} (abaixo de 2 % o motor pára)`],
+        ['Potenciómetro', `GPIO ${FW.pinos.pot}, 12 bits, filtro suavizado`],
+        ['Comandos', 'M0/M1 modo, P0–P100 potência, S alvo']
+      ];
+      $('fwInfo').innerHTML = itens.map(([t, v]) => `<div><dt>${t}</dt><dd>${v}</dd></div>`).join('');
+    })();
+
+    setInterval(() => { $('relogio').textContent = new Date().toLocaleTimeString('pt-PT'); }, 1000);
+    $('relogio').textContent = new Date().toLocaleTimeString('pt-PT');
+
+    atualizarPainel();
+    desenharTudo();
+  </script>
+</body>
+</html>
